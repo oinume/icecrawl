@@ -5,8 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/chromedp/cdproto/page"
-	"github.com/chromedp/chromedp"
 	"io"
 	"log/slog"
 	"net"
@@ -17,6 +15,8 @@ import (
 
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"github.com/antchfx/htmlquery"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/html"
 
@@ -171,7 +171,7 @@ func fetchDocument(u *url.URL) (*Document, error) {
 	return document, nil
 }
 
-func scrapeAsMarkdown(ctx context.Context, document *Document) ([]byte, error) {
+func scrapeAsMarkdown(_ context.Context, document *Document) ([]byte, error) {
 	markdown, err := htmltomarkdown.ConvertNode(document.RootNode)
 	if err != nil {
 		return nil, err
@@ -187,11 +187,11 @@ func scrapeAsPDF(ctx context.Context, document *Document) ([]byte, error) {
 	toPDF := chromedp.Tasks{
 		chromedp.Navigate(document.URL.String()),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			b, _, err := page.PrintToPDF().WithPrintBackground(false).Do(ctx)
+			var err error
+			buffer, _, err = page.PrintToPDF().WithPrintBackground(false).Do(ctx)
 			if err != nil {
 				return err
 			}
-			buffer = b
 			return nil
 		}),
 	}
@@ -201,39 +201,3 @@ func scrapeAsPDF(ctx context.Context, document *Document) ([]byte, error) {
 	}
 	return buffer, nil
 }
-
-/*
-// Command pdf is a chromedp example demonstrating how to capture a pdf of a
-// page.
-func main() {
-	// create context
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
-
-	// capture pdf
-	var buf []byte
-	if err := chromedp.Run(ctx, printToPDF(`https://www.google.com/`, &buf)); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := os.WriteFile("sample.pdf", buf, 0o644); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("wrote sample.pdf")
-}
-
-// print a specific pdf page.
-func printToPDF(urlstr string, res *[]byte) chromedp.Tasks {
-	return chromedp.Tasks{
-		chromedp.Navigate(urlstr),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			buf, _, err := page.PrintToPDF().WithPrintBackground(false).Do(ctx)
-			if err != nil {
-				return err
-			}
-			*res = buf
-			return nil
-		}),
-	}
-}
-*/
