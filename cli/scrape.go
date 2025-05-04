@@ -2,8 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
 	"io"
 	"log/slog"
 	"net"
@@ -98,7 +101,7 @@ func scrape(cmd *cobra.Command, args []string) error {
 		var result []byte
 		switch format {
 		case "markdown": // TODO: Define format as enum
-			result, err = scrapeAsMarkdown(document)
+			result, err = scrapeAsMarkdown(ctx, document)
 			if err != nil {
 				return fmt.Errorf("failed to scrape as markdown: %w", err)
 			}
@@ -108,9 +111,15 @@ func scrape(cmd *cobra.Command, args []string) error {
 			}
 			log.FC(ctx).Info("scrape command saved file", "url", u.String(), "fileName", fileName)
 		case "pdf":
-			// TODO: Implement with chromedp
-			// https://github.com/chromedp/examples/blob/master/pdf/main.go
-			return fmt.Errorf("not implemented: %s", format)
+			result, err = scrapeAsPDF(ctx, document)
+			if err != nil {
+				return fmt.Errorf("failed to scrape as pdf: %w", err)
+			}
+			fileName := fmt.Sprintf("%s.pdf", document.Title) // TODO: Determine file suffix from format
+			if err := os.WriteFile(fileName, result, 0644); err != nil {
+				return fmt.Errorf("failed to write to file: %w", err)
+			}
+			log.FC(ctx).Info("scrape command saved file", "url", u.String(), "fileName", fileName)
 		default:
 			return fmt.Errorf("invalid format: %s", format)
 		}
@@ -162,10 +171,69 @@ func fetchDocument(u *url.URL) (*Document, error) {
 	return document, nil
 }
 
-func scrapeAsMarkdown(document *Document) ([]byte, error) {
+func scrapeAsMarkdown(ctx context.Context, document *Document) ([]byte, error) {
 	markdown, err := htmltomarkdown.ConvertNode(document.RootNode)
 	if err != nil {
 		return nil, err
 	}
 	return markdown, nil
 }
+
+func scrapeAsPDF(ctx context.Context, document *Document) ([]byte, error) {
+	ctx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+
+	var buffer []byte
+	toPDF := chromedp.Tasks{
+		chromedp.Navigate(document.URL.String()),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			b, _, err := page.PrintToPDF().WithPrintBackground(false).Do(ctx)
+			if err != nil {
+				return err
+			}
+			buffer = b
+			return nil
+		}),
+	}
+	err := chromedp.Run(ctx, chromedp.Navigate(document.URL.String()), toPDF)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scrape as PDF: %w", err)
+	}
+	return buffer, nil
+}
+
+/*
+// Command pdf is a chromedp example demonstrating how to capture a pdf of a
+// page.
+func main() {
+	// create context
+	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	// capture pdf
+	var buf []byte
+	if err := chromedp.Run(ctx, printToPDF(`https://www.google.com/`, &buf)); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := os.WriteFile("sample.pdf", buf, 0o644); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("wrote sample.pdf")
+}
+
+// print a specific pdf page.
+func printToPDF(urlstr string, res *[]byte) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.Navigate(urlstr),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			buf, _, err := page.PrintToPDF().WithPrintBackground(false).Do(ctx)
+			if err != nil {
+				return err
+			}
+			*res = buf
+			return nil
+		}),
+	}
+}
+*/
